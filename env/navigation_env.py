@@ -48,7 +48,6 @@ class NavigationEnv(gym.Env):
         self.episode_total_reward = 0
         self.episode_component_rewards = {comp.name: 0.0 for comp in self.reward_components}
         
-
     def _init_simulation(self):
         scene_region = self.env_params['scene']['region']
         obstacle_params = self.env_params['scene']['obstacle']
@@ -97,7 +96,7 @@ class NavigationEnv(gym.Env):
                 high=np.array([self.angle_range*np.pi, self.angle_range*np.pi], dtype=np.float32),
                 dtype=np.float32
             )
-        elif mode == "discrete_adjust":
+        elif mode in ["discrete_adjust", "discrete_adjust_2"]:
             self.action_space = spaces.Discrete(9)
             self.angle_range = eval(self.env_params["action"]["range"])
             # 定义离散动作映射表
@@ -107,6 +106,32 @@ class NavigationEnv(gym.Env):
                 for dx in angle_options
                 for dy in angle_options
             ]
+        elif mode in ["horizon_discrete_adjust_2"]:
+            self.angle_range = eval(self.env_params["action"]["range"])
+            
+            # # 俯仰角 delta_theta（极角），3个选项
+            # theta_options = [
+            #     -self.angle_range * (1/8) * np.pi,
+            #     0.0,
+            #     self.angle_range * (1/8) * np.pi
+            # ]
+            theta_options = [0.0]
+
+            # 偏航角 delta_phi（方位角），8个选项，均匀分布在 [-1/2π, 1/2π]
+            phi_options = [
+                self.angle_range * (i / 7.0 - 0.5) * np.pi
+                for i in range(8)
+            ]
+
+            # 构建动作映射表（27 个动作：3 × 9）
+            self.action_idx_to_delta = [
+                (d_theta, d_phi)
+                for d_theta in theta_options
+                for d_phi in phi_options
+            ]
+
+            self.action_space = spaces.Discrete(len(self.action_idx_to_delta))
+
         
         elif mode == "horizon_discrete_adjust_3":
             self.action_space = spaces.Discrete(3)
@@ -226,7 +251,6 @@ class NavigationEnv(gym.Env):
         self.step_count += 1
 
         # === 1. 施加动作并推进仿真 ===
-        action = action.squeeze()
         velocity = self.compute_velocity_from_action(action)
         is_collided, nearest_info = self.sim.step(velocity, self._action_repeat)
         is_arrived = self.check_arrived()
@@ -442,51 +466,72 @@ class NavigationEnv(gym.Env):
 
             new_velocity = np.array([vx, vy, vz], dtype=np.float32)
         
-        elif mode == "discrete_adjust_2":
+        elif mode in ["discrete_adjust_2", "horizon_discrete_adjust_2"]:
+            # 参数
+            v_horiz = 15.0  # 水平速度基准
+            v_vert_max = 5.0  # 垂直速度上限
+            horizontal_threshold = 2.0  # 水平距离小于该值认为已对准目标水平位置
+
             delta_theta, delta_phi = self.action_idx_to_delta[action]
-            
-            # # 目标速度设定
-            v_horiz = 15.0  # 水平速度
-            v_vert = 5.0    # 垂直速度
-            # 获取当前位置与目标位置
+            # 获取当前和目标位置
             current_position = np.array(self.sim.drone.state.position)
             target_position = np.array(self.sim.drone.target_position)
-
-            # 用目标方向替代当前速度方向
             direction_vector = target_position - current_position
             norm = np.linalg.norm(direction_vector)
 
+            # 特殊情况处理
             if norm < 1e-3:
                 theta = np.pi / 2
                 phi = 0.0
             else:
-                # 计算从当前位置指向目标位置的方向角
-                theta = np.arccos(direction_vector[2] / norm)  # 极角（俯仰）
-                phi = np.arctan2(direction_vector[1], direction_vector[0])  # 方位角（偏航）
+                theta = np.arccos(direction_vector[2] / norm)
+                phi = np.arctan2(direction_vector[1], direction_vector[0])
 
             theta_new = np.clip(theta + delta_theta, 0, np.pi)
             phi_new = phi + delta_phi
 
-            # 构造单位方向向量（方向确定，但模长与速度无关）
+            # 方向单位向量
             vx_unit = np.sin(theta_new) * np.cos(phi_new)
             vy_unit = np.sin(theta_new) * np.sin(phi_new)
             vz_unit = np.cos(theta_new)
+            dir_unit = np.array([vx_unit, vy_unit, vz_unit], dtype=np.float32)
 
-            # 归一化水平分量向量
-            horiz_norm = np.linalg.norm([vx_unit, vy_unit])
-            if horiz_norm < 1e-6:
-                vx = 0.0
-                vy = 0.0
+            # 计算水平距离
+            horizontal_dist = np.linalg.norm(direction_vector[:2])
+
+            if horizontal_dist < horizontal_threshold:
+                # === 进入垂直调整阶段：以 vz 为基准 ===
+                vz_target = v_vert_max * np.sign(direction_vector[2])
+
+                # 单位方向向量
+                dir_unit = np.array([vx_unit, vy_unit, vz_unit], dtype=np.float32)
+
+                if abs(dir_unit[2]) > 1e-6:
+                    scale = abs(vz_target / dir_unit[2])  # 以 vz 固定为目标，缩放整向量
+                    v_raw = dir_unit * scale
+                    v_raw[2] = vz_target  # 强制精确垂直速度
+                else:
+                    v_raw = np.array([0.0, 0.0, vz_target], dtype=np.float32)
+
+                new_velocity = v_raw.astype(np.float32)
+
             else:
-                vx = v_horiz * (vx_unit / horiz_norm)
-                vy = v_horiz * (vy_unit / horiz_norm)
+                # === 正常阶段：以水平速度为基准 ===
+                horiz_norm = np.linalg.norm([vx_unit, vy_unit])
+                if horiz_norm < 1e-6:
+                    vx = 0.0
+                    vy = 0.0
+                else:
+                    vx = v_horiz * (vx_unit / horiz_norm)
+                    vy = v_horiz * (vy_unit / horiz_norm)
 
-            # 垂直速度直接设为固定模长（方向由 theta_new 决定）
-            vz = v_vert * np.sign(vz_unit)
+                vz = vz_unit * v_horiz  # 初始 vz，等比例
 
-            new_velocity = np.array([vx, vy, vz], dtype=np.float32)
-        
-        
+                # 限制 vz 不超过最大值
+                if abs(vz) > v_vert_max:
+                    vz = v_vert_max * np.sign(vz)
+
+                new_velocity = np.array([vx, vy, vz], dtype=np.float32)
 
         elif mode in ["horizon_discrete_adjust_3", "horizon_discrete_adjust_5", "horizon_discrete_adjust_7"]:
             delta_phi = self.action_idx_to_delta[action]

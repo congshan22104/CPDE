@@ -1,0 +1,44 @@
+action:
+  range: 1/8
+  type: discrete_adjust
+drone:
+  init_pos: random
+  urdf_path: assets/cf2x.urdf
+episode:
+  action_repeat: 30
+  max_episode_timesteps: 400
+observation:
+  dim: 25
+  features: null
+  grid_shape: (5,5)
+  normalize: true
+  to_real_distance: false
+reward:
+  active_components:
+    image_nonlinear_collision_penalty_2: 1.0
+  extra_rewards:
+    arrival_reward: 5.0
+    collision_penalty: -5.0
+rollout:
+  num_test_episodes: 20
+  save_freq: 20
+scene:
+  map:
+    building_path: assets/building/building.obj
+  obstacle:
+    max_height: 200
+    max_radius: 10
+    min_height: 60
+    min_radius: 5
+    num_obstacles: 100
+  region:
+    x_max: 250
+    x_min: -250
+    y_max: 250
+    y_min: -250
+    z_max: 200
+    z_min: 0
+  type: voxelized
+  voxel:
+    size: 1
+use_gui: False

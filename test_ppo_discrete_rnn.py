@@ -80,6 +80,6 @@ def test(folder_path):
 
 if __name__ == "__main__":
     test(
-        folder_path="/home/congshan/uav/uav_roundup/navigation_strategy_2/logs/ppo_discrete_rnn_s0_0521_164703",
+        folder_path="/home/congshan/uav/multi_uav_navigation/navigation_policy/",
     )
 

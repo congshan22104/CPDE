@@ -115,6 +115,7 @@ class World:
                 index=0,
                 team="blue",
                 init_pos=init_pos,
+                target_pos=[0,1,1],
                 urdf_path=urdf_path,
                 color=[0, 0, 1, 1],
             )

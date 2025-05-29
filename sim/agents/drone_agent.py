@@ -15,9 +15,10 @@ class DroneState:
     linear_velocity: np.ndarray
     angular_velocity: np.ndarray
     min_distance_to_obstacle: np.ndarray
+    collided: bool
 
 class DroneAgent:
-    def __init__(self, index, team, init_pos, urdf_path, color):
+    def __init__(self, index, team, init_pos, target_pos, urdf_path, color):
         """
         初始化单架无人机智能体。
         """
@@ -31,7 +32,7 @@ class DroneAgent:
         self._set_dynamics()
 
         self.trajectory = []
-        self.target_position = None
+        self.target_position = target_pos
         self.state = self.get_state()
 
         logging.info("[Init] %s #%d | ID=%d | Pos=%s", team.capitalize(), index, self.id, init_pos)
@@ -57,9 +58,6 @@ class DroneAgent:
             linearDamping=0.3,
             angularDamping=0.3
         )
-    
-    def update_state(self):
-        self.state = self.get_state()
 
     def apply_force(self, force):
         """
@@ -89,7 +87,6 @@ class DroneAgent:
         linear_velocity = velocity  # 传入的速度就是要设置的线性速度
         p.resetBaseVelocity(self.id, linearVelocity=linear_velocity)
     
-
     def set_orientation(self):
         # 1. 计算从当前位置指向目标位置的方向向量
         direction_vector = self.target_position - self.state.position
@@ -146,24 +143,38 @@ class DroneAgent:
                 p.addUserDebugLine(start, end, lineColorRGB=color, lineWidth=width, lifeTime=duration)
             self.trajectory.append(current_pos)
  
-    def get_state(self)-> DroneState:
+    def get_state(self) -> DroneState:
         """
         获取无人机的完整状态，包括位置、朝向、速度等信息
 
         返回:
-        - dict: 包含 position、orientation、euler、linear_velocity、angular_velocity
+        - DroneState: 包含 position、orientation、euler、linear_velocity、angular_velocity、min_distance_to_obstacle 和 collided
         """
+        # Get position and orientation from the physics engine
         pos, ori = p.getBasePositionAndOrientation(self.id)
+        
+        # Get linear and angular velocities from the physics engine
         linear, angular = p.getBaseVelocity(self.id)
+        
+        # Compute the minimum distance to the nearest obstacle
         min_distance_to_obstacle, _ = self.compute_nearest_obstacle_distance()
+        
+        # Check if the drone has collided (distance to obstacle is below a threshold)
+        collided = min_distance_to_obstacle < 2.0
+        
+        # Return the drone's state as a DroneState object
         return DroneState(
-            position=np.array(pos),
-            orientation=np.array(ori),
-            euler=np.array(p.getEulerFromQuaternion(ori)),
-            linear_velocity=np.array(linear),
-            angular_velocity=np.array(angular),
-            min_distance_to_obstacle=np.array(min_distance_to_obstacle)
+            position=np.array(pos),                # Position as a numpy array
+            orientation=np.array(ori),            # Orientation as a numpy array (quaternion)
+            euler=np.array(p.getEulerFromQuaternion(ori)),  # Euler angles from orientation
+            linear_velocity=np.array(linear),     # Linear velocity as a numpy array
+            angular_velocity=np.array(angular),   # Angular velocity as a numpy array
+            min_distance_to_obstacle=np.array(min_distance_to_obstacle),  # Minimum distance to obstacle
+            collided=collided                      # Whether the drone has collided with an obstacle
         )
+
+    def update_state(self):
+        self.state = self.get_state()
       
     def get_depth_image(self, fov=90, width=224, height=224, near=0.5, far=100.0):
         """
@@ -237,26 +248,6 @@ class DroneAgent:
         else:
             return 10, None
     
-    def check_collision(self, threshold=2.0):
-        """
-        检查是否碰撞：若与任一障碍物的最近距离小于阈值，则认为发生碰撞并将无人机标记为死亡。
-
-        参数：
-            threshold (float): 判定碰撞的距离阈值，单位米，默认2.0
-
-        返回：
-            bool: 是否发生碰撞
-        """
-        distance, nearest_info = self.compute_nearest_obstacle_distance()
-        
-        if distance < threshold:
-            logging.warning(
-                f"💥 碰撞检测！障碍物 [ID:{nearest_info['id']}] {nearest_info['name']} 距离 {distance:.2f}m，判定碰撞"
-            )
-            return True, nearest_info
-
-        return False, None
-    
     def set_position(self, position):
         p.resetBasePositionAndOrientation(self.id, position, [0, 0, 0, 1])
 
@@ -328,5 +319,8 @@ class DroneAgent:
 
         print(f"深度图已保存至: {save_path}")
     
+    def remove_model(self):
+        p.removeBody(self.id)
+
     def remove(self):
         p.removeBody(self.id)
