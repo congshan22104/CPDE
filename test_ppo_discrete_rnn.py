@@ -2,10 +2,10 @@ import torch
 import numpy as np
 import gym
 import argparse
-from model.ppo_discrete_rnn.normalization import Normalization, RewardScaling
-from model.ppo_discrete_rnn.replaybuffer import ReplayBuffer
-from model.ppo_discrete_rnn.ppo_discrete_rnn import PPO_discrete_RNN
-from env.navigation_env import NavigationEnv
+from drone_navigation.algorithms.ppo_discrete_rnn.normalization import Normalization, RewardScaling
+from drone_navigation.algorithms.ppo_discrete_rnn.replaybuffer import ReplayBuffer
+from drone_navigation.algorithms.ppo_discrete_rnn.ppo_discrete_rnn import PPO_discrete_RNN
+from envs.navigation_env import NavigationEnv
 import wandb
 import yaml
 from datetime import datetime
@@ -15,8 +15,8 @@ import logging
 
 def test(folder_path):
     # 自动识别文件路径
-    env_config_path = os.path.join(folder_path, "config", "env_config.yaml")
-    ppo_config_path = os.path.join(folder_path, "config", "ppo_config.yaml")
+    env_config_path = os.path.join(folder_path, "configs", "env_config.yaml")
+    ppo_config_path = os.path.join(folder_path, "configs", "ppo_config.yaml")
     model_path =  os.path.join(folder_path, "models", "final_model.zip")
     
     # 读取 YAML 配置
@@ -31,7 +31,7 @@ def test(folder_path):
     env = NavigationEnv(env_config)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-    env.seed(args.seed)
+    # env.seed(args.seed)
     env.action_space.seed(args.seed)
 
     args.state_dim = env.observation_space.shape[0]
@@ -80,6 +80,6 @@ def test(folder_path):
 
 if __name__ == "__main__":
     test(
-        folder_path="/home/congshan/uav/multi_uav_navigation/navigation_policy/",
+        folder_path="drone_navigation",
     )
 

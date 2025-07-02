@@ -96,40 +96,126 @@ class World:
         self.scene.build()
 
     def _spawn_drone(self):
+        drone_init   = self.drone_params.get('init_position', None)
+        drone_target = self.drone_params.get('target_position', None)
+        
+        self.drone = self._initialize_single_drone(
+            team_name='chaser',
+            init_position=drone_init,
+            target_position=drone_target,
+            min_safe_distance=self.drone_params.get('min_safe_distance', 10.0),
+            urdf_path=self.drone_params.get('urdf_path'),
+            color=[0, 0, 1, 1]  # Blue color for chasers
+        )
+             
+    def _initialize_single_drone(self, 
+                            team_name, 
+                            color,
+                            init_position=None, 
+                            target_position=None, 
+                            min_safe_distance=10.0, 
+                            urdf_path="assets/cf2x.urdf"):
+        """
+        初始化单个无人机。
+        """
+        # 初始位置
+        if init_position:
+            init_pos = init_position
+            logging.info(f"🚁 使用提供的 {team_name} 队初始位置: {init_pos}")
+        else:
+            init_pos = self._generate_safe_position(min_safe_distance)
+            logging.info(f"🚁 自动生成的 {team_name} 队初始位置: {init_pos}")
+
+        # 目标位置
+        if target_position:
+            target_pos = target_position
+            logging.info(f"🎯 使用提供的 {team_name} 队目标位置: {target_pos}")
+        else:
+            target_pos = self._generate_safe_position(min_safe_distance)
+            logging.info(f"🎯 自动生成的 {team_name} 队目标位置: {target_pos}")
+
+        # 创建单个无人机实例
+        drone = DroneAgent(
+            index=0,  # Since we are initializing just one drone
+            team=team_name,
+            init_pos=init_pos,
+            target_pos=target_pos,
+            urdf_path=urdf_path,
+            color=color,
+        )
+
+        logging.info(f"✅ {team_name} 队单个无人机初始化完成")
+
+        return drone
+    
+    def _generate_safe_position(self, min_safe_distance=10.0):
+        """
+        生成指定目标位置，确保每个位置与障碍物不发生碰撞。
+        """
         while True:
-            init_pos_config = self.drone_params["init_pos"]
+            x = np.random.uniform(self.scene_region["x_min"], self.scene_region["x_max"])
+            y = np.random.uniform(self.scene_region["y_min"], self.scene_region["y_max"])
+            z = np.random.uniform(self.scene_region["z_min"], self.scene_region["z_max"])
+            position = [x, y, z]
 
-            if init_pos_config == "random":
-                # 从 scene_region 中采样位置
-                x = np.random.uniform(self.scene_region["x_min"], self.scene_region["x_max"])
-                y = np.random.uniform(self.scene_region["y_min"], self.scene_region["y_max"])
-                z = np.random.uniform(self.scene_region["z_min"], self.scene_region["z_max"])
-                init_pos = [x, y, z]
-                logging.info(f"🚁 随机生成无人机位置: {init_pos}")
+            distance_to_nearest_obstacle = self.compute_point_to_nearest_obstacle_distance(
+                position, max_check_distance=10.0)
+
+            if distance_to_nearest_obstacle >= min_safe_distance:
+                logging.info(f"🎯 位置安全: {position}")
+                return position
             else:
-                init_pos = init_pos_config
-                logging.info(f"🚁 固定无人机位置: {init_pos}")
+                logging.warning("🚨 位置与障碍物发生碰撞，重新生成位置")
 
-            urdf_path = self.drone_params["urdf_path"]
-            self.drone = DroneAgent(
-                index=0,
-                team="blue",
-                init_pos=init_pos,
-                target_pos=[0,1,1],
-                urdf_path=urdf_path,
-                color=[0, 0, 1, 1],
-            )
-            
-            # 检查位置是否与障碍物碰撞
-            is_collided, _ = self.drone.check_collision(threshold=5.0)
-            if not is_collided:
-                logging.info("🚁 初始位置安全，无碰撞")
-                return init_pos  # 如果没有碰撞，返回当前生成的位置
-            else:
-                logging.warning("🚨 初始位置与障碍物发生碰撞，重新生成位置")
-                # 删除当前不合适的无人机，避免占用资源
-                self.drone.remove()  # 假设你有一个remove方法卸载模型，否则需要写卸载代码
+    def compute_point_to_nearest_obstacle_distance(self, point, max_check_distance=10.0):
+        """
+        计算给定点到最近障碍物的距离。
 
+        参数：
+            point (list or np.ndarray): 3D 坐标 [x, y, z]
+            max_check_distance (float): 最大检测范围（射线长度）
+
+        返回：
+            float: 到最近障碍物的距离。如果未命中，返回 max_check_distance。
+        """
+        target_radius = 0.01  # 可根据需要调整半径大小
+
+        # 创建碰撞形状
+        collision_shape_id = p.createCollisionShape(
+            shapeType=p.GEOM_SPHERE,
+            radius=target_radius
+        )
+
+        # 创建带可视化和碰撞的临时球体
+        target_id = p.createMultiBody(
+            baseMass=0,
+            baseCollisionShapeIndex=collision_shape_id,
+            baseVisualShapeIndex=-1,
+            basePosition=point
+        )
+
+        min_distance = max_check_distance  # 初始化为最大检测距离
+
+        # 遍历所有物体，排除当前临时球体
+        for body_id in range(p.getNumBodies()):
+            if body_id != target_id:
+                # 获取当前物体与其他物体之间的最近点信息
+                closest_points = p.getClosestPoints(
+                    bodyA=target_id,
+                    bodyB=body_id,
+                    distance=max_check_distance
+                )
+
+                for pt in closest_points:
+                    distance = pt[8]  # 第9个元素是距离信息
+                    if distance < min_distance:
+                        min_distance = distance
+
+        # 移除临时球体
+        p.removeBody(target_id)
+
+        return min_distance
+    
     def reset(self):
         logging.info("重置仿真环境...")
         self._connect_pybullet()

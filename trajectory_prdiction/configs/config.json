@@ -1,0 +1,18 @@
+{
+    "pkl_path": "navigation_policy/trajectories.pkl",
+    "save_dir": "logs",
+    "L_in": 8,
+    "L_out": 1,
+    "batch_size": 64,
+    "embed_dim": 128,
+    "n_heads": 4,
+    "num_layers": 3,
+    "dropout": 0.1,
+    "lr": 0.0001,
+    "weight_decay": 0.0,
+    "num_epochs": 200,
+    "step_size": 20,
+    "gamma": 0.5,
+    "val_split": 0.2,
+    "device": "cuda:0"
+}

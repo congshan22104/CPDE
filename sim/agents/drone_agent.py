@@ -30,12 +30,33 @@ class DroneAgent:
         self._load_model(urdf_path)
         self._set_visual()
         self._set_dynamics()
-
         self.trajectory = []
         self.target_position = target_pos
         self.state = self.get_state()
+        # self.start_marker_id = self._create_marker(self.init_pos, color=[0, 1, 0, 1])   # 半透明绿色球表示起点
+        # self.end_marker_id = self._create_marker(self.target_position, color=[1, 0, 0, 1])  # 半透明红色球表示终点
 
         logging.info("[Init] %s #%d | ID=%d | Pos=%s", team.capitalize(), index, self.id, init_pos)
+    
+    def _create_marker(self, position, color, radius=10):
+        """
+        创建一个纯可视标记（无碰撞体积）。
+        """
+        visual_shape_id = p.createVisualShape(
+            shapeType=p.GEOM_SPHERE,
+            radius=radius,
+            rgbaColor=color,
+            visualFramePosition=[0, 0, 0],
+        )
+
+        marker_id = p.createMultiBody(
+            baseMass=0,
+            baseVisualShapeIndex=visual_shape_id,
+            basePosition=position,
+            useMaximalCoordinates=True
+        )
+
+        return marker_id
     
     def _load_model(self, urdf_path):
         orientation = p.getQuaternionFromEuler([0, 0, 0])
@@ -43,7 +64,7 @@ class DroneAgent:
             fileName=urdf_path,
             basePosition=self.init_pos,
             baseOrientation=orientation,
-            globalScaling=10.0
+            globalScaling=1.0
         )
 
     def _set_visual(self):
@@ -124,7 +145,7 @@ class DroneAgent:
         
         return orn
 
-    def draw_trajectory(self, width=1.5, duration=0):
+    def draw_trajectory(self, width=10, duration=0):
         """
         更新无人机轨迹并在 PyBullet 中绘制轨迹线段。
 
@@ -139,7 +160,7 @@ class DroneAgent:
             if len(self.trajectory) > 0:
                 start = self.trajectory[-1]
                 end = current_pos
-                color = self.color[:3] if hasattr(self, 'color') else [0, 1, 0]  # 默认绿色
+                color = self.color[:3] if hasattr(self, 'color') else [0, 1, 0]
                 p.addUserDebugLine(start, end, lineColorRGB=color, lineWidth=width, lifeTime=duration)
             self.trajectory.append(current_pos)
  
@@ -218,6 +239,81 @@ class DroneAgent:
         depth_normalized = np.clip(depth_normalized, 0.0, 1.0)
         
         # self.save_depth_map(depth_normalized)
+        return depth_normalized
+    
+    def get_depth_image_at_angle(self,
+                                angle_rad: float,
+                                fov: float = 90,
+                                width: int = 224,
+                                height: int = 224,
+                                near: float = 0.5,
+                                far: float = 100.0) -> np.ndarray:
+        """
+        给定一个水平角度 angle_rad（弧度），让摄像头沿该水平方向对准，然后拍摄并返回归一化后的深度图。
+
+        Args:
+            angle_rad (float): 在机体坐标系的水平面内，摄像头前向相对于机头正前方偏转的角度（弧度）。
+            fov (float):          相机视野 FOV，单位为度（默认为 90°）。
+            width (int):          返回图像的宽度（像素）。
+            height (int):         返回图像的高度（像素）。
+            near (float):         相机近平面距离。
+            far (float):          相机远平面距离。
+
+        Returns:
+            np.ndarray: 大小 (height, width) 的深度图数组，值已归一化到 [0,1]。
+        """
+        # 1. 获取无人机在世界坐标系下的位置 pos 和朝向四元数 orn
+        pos, orn = p.getBasePositionAndOrientation(self.id)
+        rot_mat = np.array(p.getMatrixFromQuaternion(orn)).reshape(3, 3)
+
+        # 2. 机体坐标系下，摄像头眼睛位置的固定偏移
+        local_camera_offset = np.array([0.0, 0.0, -0.5])   # 摄像头比无人机几何中心低 0.5 m
+        # 3. 在机体坐标系下，定义一个“纯水平”的前向向量：
+        #    这里 [1,0,0] 是机头朝向，在水平面内绕 z 轴旋转 angle_rad
+        local_forward = np.array([np.cos(angle_rad), np.sin(angle_rad), 0.0])
+
+        # 4. 将“机体坐标系”的偏移/前向投影到世界坐标系
+        camera_eye = np.array(pos) + rot_mat.dot(local_camera_offset)
+        camera_forward_world = rot_mat.dot(local_forward)
+        camera_target = camera_eye + camera_forward_world
+
+        # 5. 机体坐标系下的“上方”向量始终取 [0,0,1]
+        local_camera_up = np.array([0.0, 0.0, 1.0])
+        camera_up = rot_mat.dot(local_camera_up)
+
+        # 6. 计算视图矩阵和投影矩阵
+        self.view_matrix = p.computeViewMatrix(
+            cameraEyePosition=camera_eye.tolist(),
+            cameraTargetPosition=camera_target.tolist(),
+            cameraUpVector=camera_up.tolist()
+        )
+        self.projection_matrix = p.computeProjectionMatrixFOV(
+            fov=fov,
+            aspect=width / height,
+            nearVal=near,
+            farVal=far
+        )
+
+        # 7. 调用 PyBullet 接口获取 RGBA、深度、分段掩码等信息，img_arr[3] 就是深度缓冲
+        img_arr = p.getCameraImage(
+            width, height,
+            viewMatrix=self.view_matrix,
+            projectionMatrix=self.projection_matrix,
+            renderer=p.ER_BULLET_HARDWARE_OPENGL  # 或者其他渲染模式
+        )
+
+        # img_arr 的格式： (width, height, rgba, depthBuffer, segmentationMask)
+        depth_buffer = np.array(img_arr[3], dtype=np.float32)
+
+        # 8. 将深度缓冲（0-1）转换到真实深度值：
+        #    depth_real = far * near / (far - (far - near) * depth_buffer)
+        # 公式来源：PyBullet文档
+        depth_real = far * near / (far - (far - near) * depth_buffer)
+
+        # 9. 归一化到 [0,1] 范围；近处对应 0，远处对应 1
+        depth_normalized = (depth_real - near) / (far - near)
+        depth_normalized = np.clip(depth_normalized, 0.0, 1.0)
+
         return depth_normalized
 
     def compute_nearest_obstacle_distance(self):
@@ -324,3 +420,23 @@ class DroneAgent:
 
     def remove(self):
         p.removeBody(self.id)
+
+    def check_collision(self, threshold=2.0):
+        """
+        检查是否碰撞：若与任一障碍物的最近距离小于阈值，则认为发生碰撞并将无人机标记为死亡。
+
+        参数：
+            threshold (float): 判定碰撞的距离阈值，单位米，默认2.0
+
+        返回：
+            bool: 是否发生碰撞
+        """
+        distance, nearest_info = self.compute_nearest_obstacle_distance()
+        
+        if distance < threshold:
+            logging.warning(
+                f"💥 碰撞检测！障碍物 [ID:{nearest_info['id']}] {nearest_info['name']} 距离 {distance:.2f}m，判定碰撞"
+            )
+            return True, nearest_info
+
+        return False, None

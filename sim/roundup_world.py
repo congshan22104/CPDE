@@ -100,8 +100,8 @@ class World:
         self.chasers = []
         chaser_inits   = self.drone_params.get('init_positions', {}).get('chaser', [])
         chaser_targets = self.drone_params.get('target_positions', {}).get('chaser', [])
-
-        # 初始化蓝队（chaser）无人机
+        colos = [[0, 0, 1, 1],[0, 1, 0, 1],[0, 1, 1, 1]]
+        # 初始化（chaser）无人机
         for i in range(3):
             init_pos   = chaser_inits[i]
             target_pos = chaser_targets[i]
@@ -112,7 +112,7 @@ class World:
                 target_position=target_pos,
                 min_safe_distance=self.drone_params.get('min_safe_distance', 10.0),
                 urdf_path=self.drone_params.get('urdf_path'),
-                color=[0, 0, 1, 1]  # Blue color for chasers
+                color=colos[i]  # Blue color for chasers
             )
             self.chasers.append(drone)
 
@@ -121,7 +121,7 @@ class World:
         runner_inits   = self.drone_params.get('init_positions', {}).get('runner', [])
         runner_targets = self.drone_params.get('target_positions', {}).get('runner', [])
 
-        # 初始化蓝队（chaser）无人机
+        # 初始化（runner）无人机
         for i in range(1):
             init_pos   = runner_inits[i]
             target_pos = runner_targets[i]
@@ -132,7 +132,7 @@ class World:
                 target_position=target_pos,
                 min_safe_distance=self.drone_params.get('min_safe_distance', 10.0),
                 urdf_path=self.drone_params.get('urdf_path'),
-                color=[0, 0, 1, 1]  # Blue color for chasers
+                color=[1, 0, 0, 1]  # Red color for runners
             )
             self.runners.append(drone)
 
@@ -198,14 +198,14 @@ class World:
             collision_threshold (float): 碰撞检测的距离阈值。
             collision_check_interval (int): 碰撞检测的间隔步数。
         """
-
+        p.setRealTimeSimulation(0)  # 关闭实时模拟
+        p.setTimeStep(1./240.)  # 设置时间步
         for i in range(num_repeats):
-            # 应用速度控制
+            # 应用速度控制 如果不重新设置 这个速度会减慢
             for drone, vel in zip(self.chasers, chaser_velocities):
                 p.resetBaseVelocity(drone.id, linearVelocity=vel)
             for drone, vel in zip(self.runners, runner_velocities):
                 p.resetBaseVelocity(drone.id, linearVelocity=vel)
-            
             p.stepSimulation()
         # 更新状态和绘制轨迹
         for drone in self.chasers + self.runners:

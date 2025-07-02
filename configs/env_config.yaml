@@ -1,0 +1,70 @@
+use_gui: True # 是否启用图形界面
+scene:
+  type: voxelized
+  voxel:
+    size: 1 
+  map:
+    building_path: "assets/building/building.obj" # 建筑物模型路径
+  obstacle:
+    num_obstacles: 100 # 障碍物数量
+    min_radius: 5 # 障碍物最小半径
+    max_radius: 10 # 障碍物最大半径
+    min_height: 60 # 障碍物最小高度
+    max_height: 200 # 障碍物最大高度
+  region:
+    x_min: -250
+    x_max: 250
+    y_min: -250
+    y_max: 250
+    z_min: 0
+    z_max: 200 # 仿真飞行区域范围
+drone:
+  urdf_path: "assets/cf2x.urdf" # 无人机模型路径
+  num_chaser: 3
+  num_runner: 1
+  min_safe_distance: 10.0
+  init_positions:
+    chaser:
+      - [250.0, 250.0, 100.0]
+      - [230.0, 250.0, 100.0]
+      - [250.0, 230.0, 100.0]
+    runner:
+      - [-300.0, -300.0, 100.0]
+  target_positions:
+    chaser:
+      - [5.0, 5.0, 1.0]
+      - [6.0, 5.0, 1.0]
+      - [7.0, 5.0, 1.0]
+    runner:
+      - [6.0, 0.0, 1.0]
+action:
+  type: encirclement_point
+  # type: horizon_discrete_adjust_3
+  range: 1/8
+reward:
+  extra_rewards:
+    arrival_reward: 5.0 # 成功到达目标奖励
+    collision_penalty: -5.0 # 碰撞惩罚
+  active_components:
+    obstacle_clearance_reward: 1
+  high_reward:
+    
+episode:
+  max_episode_timesteps: 200 # 每回合最大步数
+  num_action_repeats: 30
+  collision_check_interval: 30
+  arrival_threshold: 5.0
+  capture_radius: 10.0
+  min_safe_distance_for_target_pos: 5.0
+rollout:
+  save_freq: 20
+  num_test_episodes: 20
+observation:
+  dim: 100
+  grid_shape: (10,10)
+  normalize: True
+  to_real_distance: False
+  features:
+    - depth_image_runner
+
+  

@@ -26,7 +26,7 @@ class RealScene:
                 shapeType=p.GEOM_MESH,
                 fileName=self.mesh_path,
                 meshScale=[self.scale] * 3,
-                rgbaColor=[0.6, 0.6, 0.8, 0.3],
+                rgbaColor=[0.8, 0.8, 0.8, 1.0],  # Light gray color with transparency,
             )
 
             self.map_collision_shape = p.createCollisionShape(

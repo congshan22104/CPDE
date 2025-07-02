@@ -1,81 +1,162 @@
-from env.roundup_env import ThreeChaserOneRunnerEnv
-
-from model.maddpg_continous.main_parameters import main_parameters
-from model.maddpg_continous.utils.runner import RUNNER
-from model.maddpg_continous.agents.maddpg.MADDPG_agent import MADDPG
-import torch
 import os
 import yaml
-
 import time
+import torch
 from datetime import timedelta
+# 1. 导入 TensorBoard 的 SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
+
+
+from envs.roundup_env import RoundupEnv
+from algorithms.maddpg_continous.main_parameters import main_parameters
+from algorithms.maddpg_continous.utils.runner import RUNNER
+from algorithms.maddpg_continous.agents.maddpg.MADDPG_agent import MADDPG
+
 
 def get_env(env_params):
     """Create environment and get observation and action dimension of each agent in this environment."""
-    # Initialize the environment
-    env = ThreeChaserOneRunnerEnv(env_params)
+    env = RoundupEnv(env_params)
     env.reset()
 
-    # Initialize dictionaries to store dimensions and action bounds
     _dim_info = {}
     action_bound = {}
 
-    # Iterate over all agents to gather information about their observation and action spaces
     for agent_id in env.agents.keys():
-        _dim_info[agent_id] = []  # [obs_dim, act_dim]
-        action_bound[agent_id] = []  # [low action, high action]
+        _dim_info[agent_id] = []      # [obs_dim, act_dim]
+        action_bound[agent_id] = []   # [low, high]
 
-        # Get the observation and action dimensions
         _dim_info[agent_id].append(env.observation_spaces[agent_id].shape[0])
         _dim_info[agent_id].append(env.action_spaces[agent_id].shape[0])
 
-        # Get the action bounds (low and high)
         action_bound[agent_id].append(env.action_spaces[agent_id].low)
         action_bound[agent_id].append(env.action_spaces[agent_id].high)
 
-    # Return the environment and the gathered information
     return env, _dim_info, action_bound
 
 
 if __name__ == '__main__':
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # device = torch.device('mps' if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available() 
-    #                         else 'cuda' if torch.cuda.is_available() else 'cpu')
-    device = "cuda:1"
-    print("Using device:",device)
-    start_time = time.time() # 记录开始时间
-    
-    # 模型保存路径
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    chkpt_dir = os.path.join(current_dir, 'models/maddpg_models/')
-    # 定义参数
+    # ——————————————————————————————————————————
+    # Step 1: 选择设备（GPU/CPU）并打印
+    # ——————————————————————————————————————————
+    device = "cuda:1" if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
+
+    # ——————————————————————————————————————————
+    # Step 2: 生成一个 run_name，用于组织日志文件夹
+    # ——————————————————————————————————————————
+    start_time_str = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
+    run_name = f"maddpg_{start_time_str}"
+
+    # ——————————————————————————————————————————
+    # Step 3: 初始化 TensorBoard 的 SummaryWriter
+    #    我们把日志统一写到：logs/tensorboard/<run_name> 下
+    # ——————————————————————————————————————————
+    tb_log_dir = os.path.join("logs", "tensorboard", run_name)
+    os.makedirs(tb_log_dir, exist_ok=True)
+    writer = SummaryWriter(log_dir=tb_log_dir)
+    print(f"TensorBoard logs will be saved to: {tb_log_dir}")
+
+    # ——————————————————————————————————————————
+    # Step 4: 加载或生成超参数（main_parameters）
+    # ——————————————————————————————————————————
     args = main_parameters()
 
-    env_config_path = "config/env_config.yaml"
+    # ——————————————————————————————————————————
+    # Step 5: 定义模型 checkpoint 目录 & config 目录
+    # ——————————————————————————————————————————
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    log_dir = os.path.join(current_dir, f'logs/maddpg/{run_name}')
+    chkpt_dir =  os.path.join(log_dir, 'model')
+    config_dir = os.path.join(log_dir, 'config')
+
+    os.makedirs(config_dir, exist_ok=True)
+    os.makedirs(chkpt_dir, exist_ok=True)
+
+    args.chkpt_dir = chkpt_dir
+
+    # ——————————————————————————————————————————
+    # Step 6: 将超参数写到 YAML 文件里，以保证可复现性
+    # ——————————————————————————————————————————
+    args_save_path = os.path.join(config_dir, 'maddpg-config.yaml')
+    with open(args_save_path, 'w') as f:
+        yaml.dump(vars(args), f)
+
+    # ——————————————————————————————————————————
+    # Step 7: 把超参数记录到 TensorBoard——使用 add_hparams
+    #    TensorBoard 会在 “HParams (Hyperparameters)” 标签页里展示
+    #    注意：add_hparams 的格式是：{k: v} 键值对，以及一个 metrics 字典
+    #    metrics dict 可以暂时写成空 {}，看后续训练时再 add_scalar 进行记录
+    # ——————————————————————————————————————————
+    hparam_dict = vars(args)
+    # 由于 add_hparams 要求 metrics 里至少要给一个数字，这里先给个 0，
+    # 后面真正训练时每个指标会独立记录。
+    dummy_metric = {"dummy_metric": 0}
+    writer.add_hparams(hparam_dict, dummy_metric)
+
+    # ——————————————————————————————————————————
+    # Step 8: 读取环境配置，并存到 config 目录
+    # ——————————————————————————————————————————
+    env_config_path = "configs/env_config.yaml"
     with open(env_config_path, "r") as f:
         env_config = yaml.safe_load(f)
-    env, dim_info, action_bound = get_env(env_config)
-    # print(env, dim_info, action_bound)
-    # 创建MA-DDPG智能体 dim_info: 字典，键为智能体名字 内容为二维数组 分别表示观测维度和动作维度 是观测不是状态 需要注意。
-    agent = MADDPG(dim_info, args.buffer_capacity, args.batch_size, args.actor_lr, args.critic_lr, action_bound, _chkpt_dir = chkpt_dir, _device = device)
-    # 创建运行对象
-    runner = RUNNER(agent, env, args, device, mode = 'train')
-    # 开始训练
-    runner.train()
-    print("agent",agent)
 
-    # 计算训练时间
-    end_time = time.time()
-    training_time = end_time - start_time
-    # 转换为时分秒格式
-    training_duration = str(timedelta(seconds=int(training_time)))
-    print(f"\n===========训练完成!===========")
+    env_config_save_path = os.path.join(config_dir, 'env_config.yaml')
+    with open(env_config_save_path, 'w') as f:
+        yaml.dump(env_config, f)
+
+    # ——————————————————————————————————————————
+    # Step 9: 初始化环境，获取维度信息
+    # ——————————————————————————————————————————
+    env, dim_info, action_bound = get_env(env_config)
+
+    # ——————————————————————————————————————————
+    # Step 10: 创建 MADDPG Agent
+    # ——————————————————————————————————————————
+    agent = MADDPG(
+        dim_info,
+        args.buffer_capacity,
+        args.batch_size,
+        args.actor_lr,
+        args.critic_lr,
+        action_bound,
+        _chkpt_dir=chkpt_dir,
+        _device=device
+    )
+
+    # ——————————————————————————————————————————
+    # Step 11: 创建 Runner 并传入 writer，让它负责记录训练过程
+    #    注意：我们假设在 RUNNER 定义中，支持接收一个 writer 参数
+    # ——————————————————————————————————————————
+    runner = RUNNER(agent, env, args, device, mode='train', tb_writer=writer)
+
+    # ——————————————————————————————————————————
+    # Step 12: 开始训练
+    #    Runner 内部会调用 writer.add_scalar(...) 记录各指标
+    # ——————————————————————————————————————————
+    start_wall_time = time.time()
+    runner.train()
+    end_wall_time = time.time()
+
+    # ——————————————————————————————————————————
+    # Step 13: 打印训练耗时
+    # ——————————————————————————————————————————
+    elapsed_seconds = int(end_wall_time - start_wall_time)
+    training_duration = str(timedelta(seconds=elapsed_seconds))
+    print("\n=========== 训练完成! ===========")
     print(f"训练设备: {device}")
     print(f"训练用时: {training_duration}")
 
+    # ——————————————————————————————————————————
+    # Step 14: 保存最终模型
+    # ——————————————————————————————————————————
     print("--- saving trained models ---")
     agent.save_model()
     print("--- trained models saved ---")
-    
 
+    # ——————————————————————————————————————————
+    # Step 15: 关闭 SummaryWriter（非常重要！）
+    # ——————————————————————————————————————————
+    writer.close()
 
+    print(f"你可以运行以下命令，用 TensorBoard 可视化日志：")
+    print(f"tensorboard --logdir=logs/tensorboard/{run_name}")
