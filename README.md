@@ -26,7 +26,7 @@ CPDE enables coordinated interception under **imperfect sensing**, **high-speed 
 ---
 ## 🎥 Demo
 
-![Demo of CPDE](assets/demo.gif)
+![Demo of CPDE](demo.gif)
 
 ---
 ## ⚙️ Requirements
