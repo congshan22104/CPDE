@@ -4,18 +4,18 @@ scene:
   voxel:
     size: 1 
   map:
-    building_path: "assets/building/building.obj" # 建筑物模型路径
+    building_path: "assets/building/szcenter3km2.obj" # 建筑物模型路径
   obstacle:
-    num_obstacles: 100 # 障碍物数量
-    min_radius: 5 # 障碍物最小半径
-    max_radius: 10 # 障碍物最大半径
-    min_height: 60 # 障碍物最小高度
-    max_height: 200 # 障碍物最大高度
+    num_obstacles: 150 # 障碍物数量
+    min_radius: 10 # 障碍物最小半径
+    max_radius: 60 # 障碍物最大半径
+    min_height: 10 # 障碍物最小高度
+    max_height: 150 # 障碍物最大高度
   region:
-    x_min: -250
-    x_max: 250
-    y_min: -250
-    y_max: 250
+    x_min: -500
+    x_max: 500
+    y_min: -500
+    y_max: 500
     z_min: 0
     z_max: 200 # 仿真飞行区域范围
 drone:

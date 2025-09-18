@@ -68,10 +68,10 @@ class World:
             )
         elif self.scene_type == "real":
             self.scene = RealScene(
-                scene_size_x=scene_size_x,
-                scene_size_y=scene_size_y,
-                scene_size_z=scene_size_z,
-                building_path=self.building_path
+                # scene_size_x=scene_size_x,
+                # scene_size_y=scene_size_y,
+                # scene_size_z=scene_size_z,
+                mesh_path=self.building_path
             )
         elif self.scene_type == "voxelized":
             self.scene = VoxelizedRandomScene(

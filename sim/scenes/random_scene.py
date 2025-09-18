@@ -27,9 +27,9 @@ class RandomScene:
 
     def _generate_obstacles(self):
         self.obstacle_list.clear()
+        x = 0
+        y = 0
         for _ in range(self.num_obstacles):
-            x = random.uniform(-self.scene_size_x / 2, self.scene_size_x / 2)  # ✅ 长轴范围
-            y = random.uniform(-self.scene_size_y / 2, self.scene_size_y / 2)  # ✅ 宽轴范围
             is_cylinder = random.choice([True, False])
             color = [random.random(), random.random(), random.random(), 1.0]
 
@@ -58,6 +58,9 @@ class RandomScene:
                 'height': height,
                 'color': color
             })
+
+            x = random.uniform(-self.scene_size_x / 2, self.scene_size_x / 2)  # ✅ 长轴范围
+            y = random.uniform(-self.scene_size_y / 2, self.scene_size_y / 2)  # ✅ 宽轴范围
 
     def get_obstacles(self):
         return self.obstacle_list

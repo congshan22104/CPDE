@@ -51,9 +51,9 @@ class RoundupEnv(gym.Env):
         scene_region = self.env_params['scene']['region']
         obstacle_params = self.env_params['scene']['obstacle']
         drone_params = self.env_params['drone']
-        scene_type = self.env_params['scene'].get('type', 'random')
+        scene_type = self.env_params['scene'].get('type', 'real')
         voxel_size = self.env_params['scene'].get('voxel', {}).get('size', None)
-        building_path = self.env_params.get('world', {}).get('building_path', '')
+        building_path = self.env_params['scene'].get('map', {}).get('building_path', '')
 
         # Create the world
         self.sim = World(
