@@ -7,7 +7,7 @@ This repository contains the official implementation of our paper:
 ---
 ## 📐 Framework
 
-![CPDE Framework](assets/framework.png)
+![CPDE Framework](framework.pdf)
 ## 📖 Overview
 This paper presents a **Centralized Planning with Decentralized Execution (CPDE)** framework for counter-UAV operations in complex urban environments.  
 
