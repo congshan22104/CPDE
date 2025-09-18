@@ -2,7 +2,7 @@
 
 This repository contains the official implementation of our paper:
 
-> **Centralized Planning with Decentralized Execution for Counter-UAV Operations in Complex Urban Environments**
+> **A Centralized Planning with Decentralized Execution Framework for Counter-UAV Operations in Complex Urban Environments**
 
 ---
 ## 📖 Overview
