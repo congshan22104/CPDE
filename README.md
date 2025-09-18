@@ -5,9 +5,6 @@ This repository contains the official implementation of our paper:
 > **Centralized Planning with Decentralized Execution for Counter-UAV Operations in Complex Urban Environments**
 
 ---
-## 📐 Framework
-
-![CPDE Framework](framework.png)
 ## 📖 Overview
 This paper presents a **Centralized Planning with Decentralized Execution (CPDE)** framework for counter-UAV operations in complex urban environments.  
 
@@ -22,7 +19,16 @@ CPDE enables coordinated interception under **imperfect sensing**, **high-speed 
 **Experimental results** in a simulated urban environment show that CPDE significantly outperforms existing methods in both **interception rate** and **efficiency**, demonstrating effectiveness in cluttered urban settings.
 
 ---
+## 📐 Framework
 
+![CPDE Framework](framework.png)
+
+---
+## 🎥 Demo
+
+![Demo of CPDE](assets/demo.gif)
+
+---
 ## ⚙️ Requirements
 - Python >= 3.8
 - [PyBullet](https://pybullet.org/wordpress/) (simulation)
